@@ -18,6 +18,7 @@ MODEL_PATH = os.path.join("models", "model.pt")
 LABELS_PATH = os.path.join("models", "labels.json")
 
 app = Flask(__name__)
+START_TIME = time.time()
 
 # ---------------- Relay (active low) ----------------
 # active_high=False -> GPIO LOW switches the relay ON, HIGH switches it OFF
@@ -101,6 +102,19 @@ def index():
 @app.route("/video_feed")
 def video_feed():
     return Response(mjpeg(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
+
+@app.route("/status")
+def status():
+    return jsonify(
+        camera_ok=camera.get() is not None,
+        relay_on=bool(relay.is_active),
+        relay_pin=RELAY_PIN,
+        relay_seconds=RELAY_ON_SECONDS,
+        model_ok=True,
+        labels=LABELS,
+        uptime=int(time.time() - START_TIME),
+    )
 
 
 @app.route("/analyze", methods=["POST"])
