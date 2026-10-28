@@ -42,7 +42,7 @@ model = torch.jit.load(MODEL_PATH, map_location="cpu").eval()
 IMG_SIZE = 224
 
 with open(LABELS_PATH) as f:
-    LABELS = json.load(f)  # e.g. ["infected", "normal"]
+    LABELS = json.load(f)  # e.g. ["defected", "normal"]
 
 
 def predict(frame_bgr):
@@ -110,7 +110,7 @@ def analyze():
         return jsonify(error="Camera not available"), 503
 
     label, confidence = predict(frame)
-    infected = label.lower() == "infected"
+    infected = label.lower() == "defected"
     if infected:
         threading.Thread(target=pulse_relay, daemon=True).start()
 
