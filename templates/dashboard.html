@@ -167,15 +167,16 @@
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Request failed");
       const time = new Date().toLocaleTimeString();
+      const info = `Leaf coverage ${d.leaf_percent}% · ${d.leaf_count} leaves · by ${d.method}`;
       $("lastTime").textContent = time;
       if (d.infected) {
         counts.defected++;
-        showVerdict("defected", "⚠️", "Defected Detected", `Relay activated for ${d.relay_seconds} seconds`);
+        showVerdict("defected", "⚠️", "Defected Detected", `Bare / few leaves · relay on for ${d.relay_seconds}s · ${info}`);
         setConf(d.confidence, "var(--danger)");
         feed.className = "feed defected"; $("feedTag").textContent = "DEFECTED " + d.confidence + "%";
       } else {
         counts.normal++;
-        showVerdict("normal", "✅", "Normal", "No action required");
+        showVerdict("normal", "✅", "Normal", `Healthy leaves · ${info}`);
         setConf(d.confidence, "var(--accent)");
         feed.className = "feed normal"; $("feedTag").textContent = "NORMAL " + d.confidence + "%";
       }

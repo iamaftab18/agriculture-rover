@@ -14,6 +14,13 @@ from gpiozero import OutputDevice
 RELAY_PIN = 17            # BCM pin number
 RELAY_ON_SECONDS = 3
 CAMERA_INDEX = 0
+
+# Leaf filter (HSV green mask). Tune these for your lighting/background.
+GREEN_LOW = (35, 40, 40)       # H, S, V lower bound
+GREEN_HIGH = (85, 255, 255)    # H, S, V upper bound
+LEAF_HIGH = 0.12               # leaf coverage >= 12% of frame -> many leaves -> normal
+LEAF_LOW = 0.03                # leaf coverage <= 3% of frame  -> bare stick -> defected
+MIN_LEAF_AREA = 400            # px, ignore green blobs smaller than this
 MODEL_PATH = os.path.join("models", "model.pt")
 LABELS_PATH = os.path.join("models", "labels.json")
 
@@ -54,6 +61,31 @@ def predict(frame_bgr):
         probs = model(x)[0]
     idx = int(torch.argmax(probs))
     return LABELS[idx], float(probs[idx])
+
+
+def leaf_filter(frame_bgr):
+    """Return (leaf_ratio, leaf_count) using an HSV green filter."""
+    blur = cv2.GaussianBlur(frame_bgr, (5, 5), 0)
+    hsv = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv, np.array(GREEN_LOW), np.array(GREEN_HIGH))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)    # remove speckle noise
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)   # fill small holes in leaves
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    leaves = [c for c in contours if cv2.contourArea(c) >= MIN_LEAF_AREA]
+    leaf_px = sum(cv2.contourArea(c) for c in leaves)
+    return leaf_px / float(mask.shape[0] * mask.shape[1]), len(leaves)
+
+
+def classify(frame_bgr):
+    """Filter decides clear cases (many leaves / bare stick); the model decides the rest."""
+    ratio, leaves = leaf_filter(frame_bgr)
+    if ratio >= LEAF_HIGH:
+        return "normal", 95.0, ratio, leaves, "leaf filter"
+    if ratio <= LEAF_LOW:
+        return "defected", 95.0, ratio, leaves, "leaf filter"
+    label, conf = predict(frame_bgr)
+    return label, round(conf * 100, 1), ratio, leaves, "AI model"
 
 
 # ---------------- Camera ----------------
@@ -123,14 +155,17 @@ def analyze():
     if frame is None:
         return jsonify(error="Camera not available"), 503
 
-    label, confidence = predict(frame)
+    label, confidence, ratio, leaves, method = classify(frame)
     infected = label.lower() == "defected"
     if infected:
         threading.Thread(target=pulse_relay, daemon=True).start()
 
     return jsonify(
         label=label,
-        confidence=round(confidence * 100, 1),
+        confidence=confidence,
+        leaf_percent=round(ratio * 100, 1),
+        leaf_count=leaves,
+        method=method,
         infected=infected,
         relay_triggered=infected,
         relay_seconds=RELAY_ON_SECONDS if infected else 0,
