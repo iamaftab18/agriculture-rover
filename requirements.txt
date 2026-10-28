@@ -1,0 +1,6 @@
+flask
+numpy
+opencv-python-headless
+gpiozero
+lgpio
+torch
